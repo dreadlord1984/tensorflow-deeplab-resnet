@@ -77,16 +77,29 @@ def main():
             IMG_MEAN,
             coord)
         image, label = reader.image, reader.label
-    image_batch, label_batch = tf.expand_dims(image, dim=0), tf.expand_dims(label, dim=0) # Add one batch dimension.
 
+    image_batch, label_batch = tf.expand_dims(image, dim=0), tf.expand_dims(label, dim=0) # Add one batch dimension.
+    h_orig, w_orig = tf.to_float(tf.shape(image_batch)[1]), tf.to_float(tf.shape(image_batch)[2])
+    image_batch075 = tf.image.resize_images(image_batch, tf.stack([tf.to_int32(tf.multiply(h_orig, 0.75)), tf.to_int32(tf.multiply(w_orig, 0.75))]))
+    image_batch05 = tf.image.resize_images(image_batch, tf.stack([tf.to_int32(tf.multiply(h_orig, 0.5)), tf.to_int32(tf.multiply(w_orig, 0.5))]))
+    
     # Create network.
-    net = DeepLabResNetModel({'data': image_batch}, is_training=False, num_classes=args.num_classes)
+    with tf.variable_scope('', reuse=False):
+        net = DeepLabResNetModel({'data': image_batch}, is_training=False, num_classes=args.num_classes)
+    with tf.variable_scope('', reuse=True):
+        net075 = DeepLabResNetModel({'data': image_batch075}, is_training=False, num_classes=args.num_classes)
+    with tf.variable_scope('', reuse=True):
+        net05 = DeepLabResNetModel({'data': image_batch05}, is_training=False, num_classes=args.num_classes)
 
     # Which variables to load.
     restore_var = tf.global_variables()
     
     # Predictions.
-    raw_output = net.layers['fc1_voc12']
+    raw_output100 = net.layers['fc1_voc12']
+    raw_output075 = tf.image.resize_images(net075.layers['fc1_voc12'], tf.shape(raw_output100)[1:3,])
+    raw_output05 = tf.image.resize_images(net05.layers['fc1_voc12'], tf.shape(raw_output100)[1:3,])
+    
+    raw_output = tf.reduce_max(tf.stack([raw_output100, raw_output075, raw_output05]), axis=0)
     raw_output = tf.image.resize_bilinear(raw_output, tf.shape(image_batch)[1:3,])
     raw_output = tf.argmax(raw_output, dimension=3)
     pred = tf.expand_dims(raw_output, dim=3) # Create 4-d tensor.
